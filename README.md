@@ -8,6 +8,13 @@ This Python-based tool automates the process of finding official LinkedIn Compan
 * **OneDrive Integration**: Configured to work within a synchronized corporate environment (Alten DSO Tools directory structure).
 * **Robust Data Handling**: Uses `pandas` for Excel manipulation and prevents duplicate processing by skipping already enriched rows.
 
+## ⚠️ Quota Management & Scalability
+The Google Custom Search API (Free Tier) has a strict limit of **100 queries per day per API key**. To overcome this limitation for professional use, this script features:
+
+* **Multi-Key Support**: Dynamically cycles through a list of keys stored in `api_keys.xlsx`.
+* **Automatic Handover**: When a key returns a `429 Too Many Requests` error, the script automatically switches to the next available key.
+* **Progress Persistence**: If all keys are exhausted, the script saves the current progress and terminates cleanly, allowing for a seamless resume the next day.
+
 ## 🛠️ Technical Stack
 * **Language:** Python 3.x
 * **Libraries:** `pandas`, `requests`, `openpyxl`
