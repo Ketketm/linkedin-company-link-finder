@@ -3,11 +3,11 @@ import os
 import requests
 import time
 
-# --- ONEDRIVE PATH CONFIGURATION ---
-# We use the USERPROFILE environment variable to ensure it works on any Windows session
-base_path = os.path.join(os.environ['USERPROFILE'], 'Alten', 'DSO Tools', 'Python', 'Import template')
-file_companies = os.path.join(base_path, 'LK-company-finder.xlsx')
-file_keys = os.path.join(base_path, 'api_keys.xlsx')
+# --- PATH CONFIGURATION ---
+# Uses the script's directory to find files, ensuring cross-platform compatibility
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+FILE_COMPANIES = os.path.join(BASE_DIR, 'LK-company-finder.xlsx')
+FILE_KEYS = os.path.join(BASE_DIR, 'api_keys.xlsx')
 
 def get_linkedin_url(company_name, api_key, search_engine_id):
     """Perform search via Google Custom Search JSON API"""
@@ -16,59 +16,62 @@ def get_linkedin_url(company_name, api_key, search_engine_id):
         'q': f'"{company_name}" linkedin company',
         'key': api_key,
         'cx': search_engine_id,
-        'num': 1  # We only need the top result
+        'num': 1 
     }
     
-    response = requests.get(url, params=params)
-    
-    if response.status_code == 200:
-        data = response.json()
-        items = data.get('items', [])
-        if items:
-            link = items[0].get('link')
-            # Check if the result is actually a LinkedIn company page
-            if "linkedin.com/company/" in link:
-                return link
-        return "Not Found"
-    elif response.status_code == 429:
-        # 429 status code means the daily quota for this key is reached
-        return "QUOTA_EXCEEDED"
-    else:
-        return f"API Error: {response.status_code}"
+    try:
+        response = requests.get(url, params=params, timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            items = data.get('items', [])
+            if items:
+                link = items[0].get('link')
+                if "linkedin.com/company/" in link:
+                    return link
+            return "Not Found"
+        elif response.status_code == 429:
+            # Daily quota (100 req/day) reached for this specific key
+            return "QUOTA_EXCEEDED"
+        else:
+            return f"API Error: {response.status_code}"
+    except Exception as e:
+        return f"Error: {str(e)}"
 
 def main():
-    # 1. Load API keys and Search Engine ID from the auxiliary Excel file
+    # 1. Load API keys and Search Engine ID
     try:
-        df_keys = pd.read_excel(file_keys)
+        df_keys = pd.read_excel(FILE_KEYS)
         keys_list = df_keys['key'].tolist()
-        cx_id = df_keys['cx'].iloc[0] # Assuming all keys use the same Search Engine ID
+        cx_id = df_keys['cx'].iloc[0] 
     except Exception as e:
-        print(f"Error loading API keys: {e}")
+        print(f"Error loading API keys file: {e}")
         return
 
-    # 2. Load the main company database
-    df_comp = pd.read_excel(file_companies)
+    # 2. Load company database
+    try:
+        df_comp = pd.read_excel(FILE_COMPANIES)
+    except Exception as e:
+        print(f"Error loading company file: {e}")
+        return
     
-    # Ensure the LinkedIn URL column exists
     if 'Linkedin_URL' not in df_comp.columns:
         df_comp['Linkedin_URL'] = ""
 
     current_key_index = 0
-    print(f"Starting script with {len(keys_list)} API keys available.")
+    print(f"Starting process: {len(keys_list)} API keys available (Limit: 100 req/day each).")
 
-    # 3. Iterate through companies in the Excel file
+    # 3. Iterate through companies
     for index, row in df_comp.iterrows():
-        # Only process rows where the LinkedIn URL is missing
+        # Only process rows where URL is missing
         if pd.isna(row['Linkedin_URL']) or row['Linkedin_URL'] == "":
-            company = row.iloc[0] # Assumes Column A contains the company name
+            company = row.iloc[0] 
             print(f"Searching for: {company}...")
             
             success = False
             while not success:
-                # Check if we ran out of keys
                 if current_key_index >= len(keys_list):
-                    print("All API keys exhausted for today!")
-                    df_comp.to_excel(file_companies, index=False)
+                    print("⚠️ All API keys exhausted for today!")
+                    df_comp.to_excel(FILE_COMPANIES, index=False)
                     return
 
                 result = get_linkedin_url(company, keys_list[current_key_index], cx_id)
@@ -77,15 +80,13 @@ def main():
                     print(f"Key {current_key_index + 1} exhausted. Switching to next key...")
                     current_key_index += 1
                 else:
-                    # Store the result in the DataFrame
                     df_comp.at[index, 'Linkedin_URL'] = result
                     success = True
-                    # Short pause to stay within API rate limits
-                    time.sleep(0.5)
+                    time.sleep(0.5) # Anti-spam / rate limiting delay
 
-    # 4. Final save to OneDrive
-    df_comp.to_excel(file_companies, index=False)
-    print("Process complete. File updated on OneDrive.")
+    # 4. Final Save
+    df_comp.to_excel(FILE_COMPANIES, index=False)
+    print("✅ Success: The Excel file has been updated.")
 
 if __name__ == "__main__":
     main()
